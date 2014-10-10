@@ -63,6 +63,13 @@ options:
         required: false
         default: 'yes'
         choices: ['yes', 'no']
+    ubuntu_base:
+        version_added: '1.8'
+        description:
+            - Force identify host distro as Ubuntu-base to allow PPAs to work.
+        required: false
+        default: 'no'
+        choices: ['yes', 'no']
 author: Alexander Saltanov
 version_added: "0.7"
 requirements: [ python-apt ]
@@ -81,6 +88,9 @@ apt_repository: repo='deb http://archive.canonical.com/ubuntu hardy partner' sta
 # On Ubuntu target: add nginx stable repository from PPA and install its signing key.
 # On Debian target: adding PPA is not available, so it will fail immediately.
 apt_repository: repo='ppa:nginx/stable'
+
+# Forces distros such as Linux Mint to be identified as an Ubuntu target.
+apt_repository: repo='ppa:nginx/stable' ubuntu_base=yes
 '''
 
 import glob
