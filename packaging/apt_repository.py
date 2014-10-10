@@ -388,6 +388,7 @@ def main():
             state=dict(choices=['present', 'absent'], default='present'),
             mode=dict(required=False, default=0644),
             update_cache = dict(aliases=['update-cache'], type='bool', default='yes'),
+            ubuntu_base = dict(aliases=['ubuntu-base'], type='bool', default='no'),
             # this should not be needed, but exists as a failsafe
             install_python_apt=dict(required=False, default="yes", type='bool'),
             validate_certs = dict(default='yes', type='bool'),
@@ -402,10 +403,11 @@ def main():
     repo = module.params['repo']
     state = module.params['state']
     update_cache = module.params['update_cache']
+    ubuntu_base = modules.params['ubuntu_base']
     sourceslist = None
 
     if HAVE_PYTHON_APT:
-        if isinstance(distro, aptsources_distro.UbuntuDistribution):
+        if isinstance(distro, aptsources_distro.UbuntuDistribution) or ubuntu_base:
             sourceslist = UbuntuSourcesList(module,
                 add_ppa_signing_keys_callback=get_add_ppa_signing_key_callback(module))
         elif HAVE_PYTHON_APT and \
