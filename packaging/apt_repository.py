@@ -398,7 +398,7 @@ def identify_target_distro(module, repo, base_codename):
 
     First check if distro is an instance of Ubuntu, Debian or other valid Distribution.
     Then check if the repo is a ppa,
-      If yes and the distro is not Debian,
+      If yes and the distro is not Debian and Ubuntu,
         check if base_codename is defined, raise error if not.
 
     Return values:
@@ -413,7 +413,7 @@ def identify_target_distro(module, repo, base_codename):
 
     if is_ubuntu_ppa and not is_ubuntu and not base_codename:
         module.fail_json(
-            msg='When adding a ppa in an Ubuntu-based target, you need to define option `base_codename`.')
+            msg='When adding a ppa for an Ubuntu-based target, you need to define option `base_codename`.')
 
     ubuntu_target = is_ubuntu or is_ubuntu_ppa
     valid_target = is_debian or is_dist
