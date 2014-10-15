@@ -63,6 +63,13 @@ options:
         required: false
         default: 'yes'
         choices: ['yes', 'no']
+    base_codename:
+        version_added: '1.8'
+        description:
+            - The codename of the Ubuntu version used as base for the target distro (e.g. precise, trusty)
+              Only needed when adding a PPA for Ubuntu-based distributions.
+        required: false
+        default: none
 author: Alexander Saltanov
 version_added: "0.7"
 requirements: [ python-apt ]
@@ -81,6 +88,9 @@ apt_repository: repo='deb http://archive.canonical.com/ubuntu hardy partner' sta
 # On Ubuntu target: add nginx stable repository from PPA and install its signing key.
 # On Debian target: adding PPA is not available, so it will fail immediately.
 apt_repository: repo='ppa:nginx/stable'
+
+# On Linux Mint 17 target (based on Ubuntu 14.04 Trusty Tahr)
+apt_repository: repo='ppa:nginx/stable' base_codename='trusty'
 '''
 
 import glob
@@ -318,9 +328,10 @@ class UbuntuSourcesList(SourcesList):
 
     LP_API = 'https://launchpad.net/api/1.0/~%s/+archive/%s'
 
-    def __init__(self, module, add_ppa_signing_keys_callback=None):
+    def __init__(self, module, add_ppa_signing_keys_callback=None, base_codename=None):
         self.module = module
         self.add_ppa_signing_keys_callback = add_ppa_signing_keys_callback
+        self.codename = base_codename or distro.codename
         super(UbuntuSourcesList, self).__init__()
 
     def _get_ppa_info(self, owner_name, ppa_name):
@@ -340,7 +351,7 @@ class UbuntuSourcesList(SourcesList):
         except IndexError:
             ppa_name = 'ppa'
 
-        line = 'deb http://ppa.launchpad.net/%s/%s/ubuntu %s main' % (ppa_owner, ppa_name, distro.codename)
+        line = 'deb http://ppa.launchpad.net/%s/%s/ubuntu %s main' % (ppa_owner, ppa_name, self.codename)
         return line, ppa_owner, ppa_name
 
     def _key_already_exists(self, key_fingerprint):
@@ -357,7 +368,7 @@ class UbuntuSourcesList(SourcesList):
                     command = ['apt-key', 'adv', '--recv-keys', '--keyserver', 'hkp://keyserver.ubuntu.com:80', info['signing_key_fingerprint']]
                     self.add_ppa_signing_keys_callback(command)
 
-            file = file or self._suggest_filename('%s_%s' % (line, distro.codename))
+            file = file or self._suggest_filename('%s_%s' % (line, self.codename))
         else:
             source = self._parse(line, raise_if_invalid_or_disabled=True)[2]
             file = file or self._suggest_filename(source)
@@ -381,16 +392,46 @@ def get_add_ppa_signing_key_callback(module):
         return _run_command
 
 
+def identify_target_distro(module, repo, base_codename):
+    """
+    Identifies if target should be treated as Ubuntu or Debian target.
+
+    First check if distro is an instance of Ubuntu, Debian or other valid Distribution.
+    Then check if the repo is a ppa,
+      If yes and the distro is not Debian,
+        check if base_codename is defined, raise error if not.
+
+    Return values:
+    ubuntu_target -- True if distro is instance of Ubuntu or repo is a ppa.
+    valid_target -- True if distro is instance of Debian or other valid Distribution
+    """
+    is_ubuntu = isinstance(distro, aptsources_distro.UbuntuDistribution)
+    is_debian = isinstance(distro, aptsources_distro.DebianDistribution)
+    is_dist = isinstance(distro, aptsources_distro.Distribution)
+
+    is_ubuntu_ppa = 'ppa:' in repo and not is_debian
+
+    if is_ubuntu_ppa and not is_ubuntu and not base_codename:
+        module.fail_json(
+            msg='When adding a ppa in an Ubuntu-based target, you need to define option `base_codename`.')
+
+    ubuntu_target = is_ubuntu or is_ubuntu_ppa
+    valid_target = is_debian or is_dist
+
+    return ubuntu_target, valid_target
+
+
 def main():
     module = AnsibleModule(
         argument_spec=dict(
             repo=dict(required=True),
             state=dict(choices=['present', 'absent'], default='present'),
             mode=dict(required=False, default=0644),
-            update_cache = dict(aliases=['update-cache'], type='bool', default='yes'),
+            update_cache=dict(aliases=['update-cache'], type='bool', default='yes'),
+            base_codename=dict(aliases=['base-codename'], type='str', default=None),
             # this should not be needed, but exists as a failsafe
             install_python_apt=dict(required=False, default="yes", type='bool'),
-            validate_certs = dict(default='yes', type='bool'),
+            validate_certs=dict(default='yes', type='bool'),
         ),
         supports_check_mode=True,
     )
@@ -402,14 +443,18 @@ def main():
     repo = module.params['repo']
     state = module.params['state']
     update_cache = module.params['update_cache']
+    base_codename = module.params['base_codename']
     sourceslist = None
 
+    ubuntu_target, valid_target = identify_target_distro(module, repo, base_codename)
+
     if HAVE_PYTHON_APT:
-        if isinstance(distro, aptsources_distro.UbuntuDistribution):
-            sourceslist = UbuntuSourcesList(module,
-                add_ppa_signing_keys_callback=get_add_ppa_signing_key_callback(module))
-        elif HAVE_PYTHON_APT and \
-            isinstance(distro, aptsources_distro.DebianDistribution) or isinstance(distro, aptsources_distro.Distribution):
+        if ubuntu_target:
+            sourceslist = UbuntuSourcesList(
+                module,
+                add_ppa_signing_keys_callback=get_add_ppa_signing_key_callback(module),
+                base_codename=base_codename)
+        elif valid_target:
             sourceslist = SourcesList()
     else:
         module.fail_json(msg='Module apt_repository supports only Debian and Ubuntu. ' + \
